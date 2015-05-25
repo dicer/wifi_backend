@@ -190,7 +190,7 @@ public class WiFiSamplerService extends Service implements gpsSamplingCallback {
 
             if (configs.size() > 0) {
 
-                List<String> foundBssids = new ArrayList<String>(configs.size());
+                List<FoundAP> foundBssids = new ArrayList<FoundAP>(configs.size());
 
                 for (ScanResult config : configs) {
                     // some strange devices use a dot instead of :
@@ -226,7 +226,7 @@ public class WiFiSamplerService extends Service implements gpsSamplingCallback {
                         handler.sendMessage(m);
                     } else {
                         if (configuration.debug >= configuration.DEBUG_VERBOSE) Log.i(TAG, "Scan found: '" + config.SSID + "' BSSID: " + canonicalBSSID);
-                        foundBssids.add(canonicalBSSID);
+                        foundBssids.add(new FoundAP(canonicalBSSID, config.SSID, config.capabilities, config.level));
                     }
                 }
                 Message m = new Message();
@@ -236,6 +236,21 @@ public class WiFiSamplerService extends Service implements gpsSamplingCallback {
             }
         }
 
+    }
+    
+    private class FoundAP {
+    	String bssid;
+    	String ssid;
+    	String capabilities;
+    	int level;
+    	
+		public FoundAP(String bssid, String ssid, String capabilities, int level) {
+			super();
+			this.bssid = bssid;
+			this.ssid = ssid;
+			this.capabilities = capabilities;
+			this.level = level;
+		}
     }
 
     public boolean isScanStarted() {
@@ -277,9 +292,9 @@ public class WiFiSamplerService extends Service implements gpsSamplingCallback {
 
                 case GOTSCAN:
                     long entryTime = System.currentTimeMillis();
-                    List<String> foundBssids = (List<String>) msg.obj;
-                    for (String bssid : foundBssids) {
-                        sDb.addSample( bssid, mLocation );
+                    List<FoundAP> foundBssids = (List<FoundAP>) msg.obj;
+                    for (FoundAP ap : foundBssids) {
+                        sDb.addSample( ap.bssid, ap.ssid, ap.capabilities, mLocation );
                     }
                     if (configuration.debug >= configuration.DEBUG_NORMAL) Log.i(TAG,"Scan process time: "+(System.currentTimeMillis()-entryTime)+"ms");
                 break;

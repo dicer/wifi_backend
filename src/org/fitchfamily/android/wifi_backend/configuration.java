@@ -74,6 +74,12 @@ class configuration {
     private static final String TAG = TAG_PREFIX+"configuation";
     public static ConfigChangedListener listener = new ConfigChangedListener();
     private static gpsSamplingCallback mCallback = null;
+	
+	// If this gets switched on, we save the SSID and the capabilities
+	// (encryption etc) of an AP to the database as well. Not used by this
+	// service at the moment. Only useful if you want that info for debugging or
+	// other uses and get it straight from the DB.
+    public static boolean ap_save_advanced;
 
     public static void fillFromPrefs(SharedPreferences sharedPrefs) {
         gpsMinAccuracy = Float.valueOf(sharedPrefs.getString("gps_accuracy_preference", "15.0"));
@@ -88,6 +94,8 @@ class configuration {
         apMovedThreshold = Float.valueOf(sharedPrefs.getString("ap_moved_range_preference", "50.0"));
         apMovedGuardCount = Integer.valueOf(sharedPrefs.getString("ap_moved_guard_preference", "100"));
 
+        ap_save_advanced = sharedPrefs.getBoolean("ap_save_advanced_preference", false);
+
         debug = Integer.valueOf(sharedPrefs.getString("debug_preference", "0.0"));
 
         Log.i(TAG, "fillFromPrefs(): Min GPS accuracy: " + gpsMinAccuracy);
@@ -96,6 +104,7 @@ class configuration {
         Log.i(TAG, "fillFromPrefs(): AP min range: " + apAssumedAccuracy);
         Log.i(TAG, "fillFromPrefs(): AP moved threshold: " + apMovedThreshold);
         Log.i(TAG, "fillFromPrefs(): AP moved guard count: " + apMovedGuardCount);
+        Log.i(TAG, "fillFromPrefs(): Save advanced details: " + ap_save_advanced);
         Log.i(TAG, "fillFromPrefs(): Debug log level: " + debug);
         if (mCallback != null)
             mCallback.updateSamplingConf(gpsMinTime, gpsMinDistance);

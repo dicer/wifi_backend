@@ -54,6 +54,12 @@
                 android:inputType="numberDecimal"
                 android:digits="0123456789"
                 />
+        <CheckBoxPreference
+            android:key="ap_save_advanced_preference"
+            android:title="@string/ap_save_advanced"
+            android:dialogTitle="@string/ap_save_advanced_description"
+            android:defaultValue="false"
+            />
     </PreferenceCategory>
 
     <EditTextPreference

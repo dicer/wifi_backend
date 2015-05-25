@@ -52,6 +52,7 @@ import android.util.LruCache;
  *      d31         - Distance, in meters, between sample 3 and sample 1
  *      move_guard  - Count down of times to ignore moved AP
  *      radius      - Estimated coverage radius of AP
+ *      ssid        - The last ssid belonging to this bssid
  */
 public class samplerDatabase {
     private final static String TAG = configuration.TAG_PREFIX + "samplerDatabase";
@@ -74,6 +75,8 @@ public class samplerDatabase {
     private static final String COL_D23 = "d23";
     private static final String COL_D31 = "d31";
     private static final String COL_MOVED_GUARD = "move_guard";
+    private static final String COL_SSID = "ssid";
+    private static final String COL_CAPABILITIES = "capabilities";
 
     private SQLiteStatement sqlSampleInsert;
     private SQLiteStatement sqlSampleUpdate;
@@ -126,8 +129,10 @@ public class samplerDatabase {
                                                     COL_D12 + ", " +
                                                     COL_D23 + ", " +
                                                     COL_D31 + ", " +
-                                                    COL_MOVED_GUARD + ") " +
-                                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+                                                    COL_MOVED_GUARD + ", " +
+                                                    COL_SSID + ", " +
+                                                    COL_CAPABILITIES + ") " +
+                                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
 
         sqlSampleUpdate = database.compileStatement("UPDATE " +
                                                     TABLE_SAMPLES + " SET "+
@@ -143,7 +148,9 @@ public class samplerDatabase {
                                                     COL_D12 + "=?, " +
                                                     COL_D23 + "=?, " +
                                                     COL_D31 + "=?, " +
-                                                    COL_MOVED_GUARD + "=? " +
+                                                    COL_MOVED_GUARD + "=?, " +
+                                                    COL_SSID + "=?, " +
+                                                    COL_CAPABILITIES + "=? " +
                                                     "WHERE " + COL_BSSID + "=?;");
 
         sqlAPdrop = database.compileStatement("DELETE FROM " +
@@ -210,6 +217,15 @@ public class samplerDatabase {
                              " SET " + COL_RADIUS + "=-1.0;");
             database.setVersion(3);
         }
+        if (curVer < 4) { // upgrade to 3
+            database.execSQL("ALTER TABLE " + TABLE_SAMPLES +
+                             " ADD COLUMN " + COL_SSID +
+                             " STRING;");
+            database.execSQL("ALTER TABLE " + TABLE_SAMPLES +
+                             " ADD COLUMN " + COL_CAPABILITIES +
+                             " STRING;");
+            database.setVersion(4);
+        }
         if (configuration.debug >= configuration.DEBUG_SPARSE) Log.i(TAG, "setupDatabase() version is " + database.getVersion());
         publishSize();
     }
@@ -221,7 +237,7 @@ public class samplerDatabase {
         mCount.close();
     }
 
-    public void addSample( String bssid, Location sampleLoc ) {
+    public void addSample( String bssid, String ssid, String capabilities, Location sampleLoc ) {
         final long entryTime = System.currentTimeMillis();
         final String canonicalBSSID = bssid.replace(":","");
         apInfo curInfo;
@@ -251,9 +267,9 @@ public class samplerDatabase {
                            null);
         if (cursor != null) {
             if (cursor.getCount() == 0) {
-                new apInfo(bssid, sampleLoc).insert();
+                new apInfo(bssid, ssid, capabilities, sampleLoc).insert();
             } else if (cursor.getCount() == 1) {
-                updateAP(new apInfo(cursor), sampleLoc );
+                updateAP(new apInfo(cursor), ssid, capabilities, sampleLoc );
             } else {
                 if (configuration.debug >= configuration.DEBUG_SPARSE) Log.i(TAG, "Unexpected number of samples (" + cursor.getCount() + ") in db" );
             }
@@ -280,7 +296,7 @@ public class samplerDatabase {
     // We will take the new sample an see if we can make a triangle with
     // a larger perimeter by replacing one of our current samples with
     // the new one.
-    private void updateAP(apInfo curInfo, Location sampleLoc ) {
+    private void updateAP(apInfo curInfo, String ssid, String capabilities, Location sampleLoc ) {
         apInfo bestAP = new apInfo(curInfo);
         float bestPerimeter = bestAP.perimeter();
 
@@ -302,6 +318,10 @@ public class samplerDatabase {
             }
         }
         if (configuration.debug >= configuration.DEBUG_VERBOSE) Log.i(TAG, "Sample: " + bestAP.toString());
+        if (configuration.ap_save_advanced) {
+        	bestAP.setSsid(ssid);
+        	bestAP.setCapabilities(capabilities);
+        }
         bestAP.update();
     }
 
@@ -371,15 +391,21 @@ public class samplerDatabase {
         private Location[] sample;      // Our three saved samples
         private float[] distance;       // Distance betweeen saved samples
         private int moved_guard;        // Countdown for ignoring moved AP
+        private String ssid = "";
+        private String capabilities = "";
         private boolean changed = true; // If true we need to update this record in Db
 
         private apInfo() {};
 
-        public apInfo(String bssid, Location s1) {
+        public apInfo(String bssid, String ssid, String capabilities, Location s1) {
             if (configuration.debug >= configuration.DEBUG_VERBOSE) Log.i(TAG, "apInfo(" + bssid + ", " + s1 + ")" );
             this.bssid = bssid.replace(":","");
             this.reset(s1);
             this.changed = true;
+            if (configuration.ap_save_advanced) {
+            	this.setSsid(ssid);
+            	this.setCapabilities(capabilities);
+            }
         }
 
         public apInfo(Cursor c) {
@@ -414,6 +440,8 @@ public class samplerDatabase {
         public apInfo(apInfo x) {
             if (configuration.debug >= configuration.DEBUG_VERBOSE) Log.i(TAG, "apInfo( apInfo x )" );
             this.bssid = x.bssid;
+            this.setSsid(x.getSsid());
+            this.setCapabilities(x.getCapabilities());
             estimate = new Location(x.estimate);
             radius = x.radius;
             sample = new Location[3];
@@ -521,6 +549,8 @@ public class samplerDatabase {
             sqlSampleInsert.bindString(12, String.valueOf(distance[1]));
             sqlSampleInsert.bindString(13, String.valueOf(distance[2]));
             sqlSampleInsert.bindString(14, String.valueOf(moved_guard));
+            sqlSampleInsert.bindString(15, String.valueOf(getSsid()));
+            sqlSampleInsert.bindString(16, String.valueOf(getCapabilities()));
             long newID = sqlSampleInsert.executeInsert();
             sqlSampleInsert.clearBindings();
             resetLocationCache();
@@ -548,7 +578,9 @@ public class samplerDatabase {
                 sqlSampleUpdate.bindString(11, String.valueOf(distance[1]));
                 sqlSampleUpdate.bindString(12, String.valueOf(distance[2]));
                 sqlSampleUpdate.bindString(13, String.valueOf(moved_guard));
-                sqlSampleUpdate.bindString(14, bssid);
+                sqlSampleUpdate.bindString(14, String.valueOf(getSsid()));
+                sqlSampleUpdate.bindString(15, String.valueOf(getCapabilities()));
+                sqlSampleUpdate.bindString(16, bssid);
                 long newID = sqlSampleUpdate.executeInsert();
                 sqlSampleUpdate.clearBindings();
                 resetLocationCache();
@@ -565,5 +597,21 @@ public class samplerDatabase {
                    "moved_guard=" + moved_guard + ", " +
                    "changed=" + changed + "}";
         }
+
+		public String getSsid() {
+			return ssid;
+		}
+
+		public void setSsid(String ssid) {
+			this.ssid = ssid;
+		}
+
+		public String getCapabilities() {
+			return capabilities;
+		}
+
+		public void setCapabilities(String capabilities) {
+			this.capabilities = capabilities;
+		}
     }
 }
